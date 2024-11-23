@@ -30,6 +30,10 @@ class JoyConController:
         self.x, self.y = self._compute_position(
             self.current_positions["shoulder_lift"], self.current_positions["elbow_flex"]
         )
+        
+        self.joycon_L = JoyCon(*get_L_id())
+        self.joycon_R = JoyCon(*get_R_id())
+        logging.info(f"Connected to JoyCon")
 
         # Gamepad states
         self.axes = {
@@ -125,9 +129,7 @@ class JoyConController:
 
     def connect(self):
         try:
-            self.joycon_L = JoyCon(*get_L_id())
-            self.joycon_R = JoyCon(*get_R_id())
-            logging.info(f"Connected to JoyCon")
+          
             self.running = True
         except OSError as e:
             logging.error(f"Unable to open device: {e}")
