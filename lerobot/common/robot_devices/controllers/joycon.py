@@ -407,10 +407,11 @@ class JoyConController:
         # Perform eligibility check
         if self._is_position_valid(temp_positions, temp_x, temp_y) and correct_inverse_kinematics:
             # Atomic update: all positions are valid, apply the changes
-            print(temp_positions)
-          #  self.current_positions = temp_positions
-          #  self.x = temp_x
-          #  self.y = temp_y
+            
+            self.current_positions = temp_positions
+            self.x = temp_x
+            self.y = temp_y
+            print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
