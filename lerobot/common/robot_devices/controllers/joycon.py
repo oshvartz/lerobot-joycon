@@ -4,6 +4,9 @@ import math
 import struct
 import threading
 import time
+import json
+import signal
+import numpy as np
 from pyjoycon import JoyCon, get_R_id, get_L_id
 
 
@@ -17,6 +20,7 @@ class JoyConController:
         *args,
         **kwargs,
     ):
+    
         self.motor_names = motor_names
         self.initial_position = initial_position if initial_position else [90, 170, 170, 0, 0, 10]
         self.current_positions = dict(zip(self.motor_names, self.initial_position, strict=False))
@@ -34,6 +38,10 @@ class JoyConController:
         self.joycon_L = JoyCon(*get_L_id())
         self.joycon_R = JoyCon(*get_R_id())
         logging.info(f"Connected to JoyCon")
+        
+        self.calibrate()
+        
+        self.running = True
 
         # Gamepad states
         self.axes = {
@@ -118,7 +126,8 @@ class JoyConController:
 
         # Start the thread to read inputs
         self.lock = threading.Lock()
-        self.thread = threading.Thread(target=self.read_loop, daemon=True)
+        self.thread = threading.Thread(target=self.read_loop, daemon=False)
+        #self.thread = threading.Thread(target=self.read_loop, daemon=True)
         self.thread.start()
 
         # Set initial light bar color to default
@@ -137,23 +146,78 @@ class JoyConController:
 
     def disconnect(self):
         self.running = False
+    
+    def calibrate(self):
+        num_samples = 100
+        right_samples = []
+        left_samples = []
+        for _ in range(num_samples):
+            status = self.joycon_L.get_status()
+            status_R = self.joycon_R.get_status()
+            accel = status['accel']
+            accel_R = status_R['accel']
+            rot = status['gyro']
+            rot_R = status_R['gyro']
+            joystick = status['analog-sticks']['left']
+            joystick_R = status_R['analog-sticks']['right']
+
+            left_samples.append([accel['x'], accel['y'], accel['z'], rot['x'], rot['y'], rot['z'], joystick['horizontal'], joystick['vertical']])
+            right_samples.append([accel_R['x'], accel_R['y'], accel_R['z'], rot_R['x'], rot_R['y'], rot_R['z'], joystick_R['horizontal'], joystick_R['vertical']])
+            time.sleep(0.01)
+        
+        self.right_calibration_offset = np.mean(right_samples, axis=0)
+        self.left_calibration_offset = np.mean(left_samples, axis=0)
+
        
     def read_loop(self):
         while self.running:
             try:
                 status = self.joycon_L.get_status()
-                status_R = self.joycon_R.get_status()
-                accel = status['accel']
-                accel_R = status_R['accel']
-                rot = status['gyro']
-                rot_R = status_R['gyro']
-                joystick = status['analog-sticks']['left']
-                joystick_R = status_R['analog-sticks']['right']
+                status_r = self.joycon_R.get_status()
+                self._process_gamepad_input_new(status,status_r)
+                #accel = status['accel']
+                #accel_R = status_R['accel']
+                #rot = status['gyro']
+                #rot_R = status_R['gyro']
+                #joystick = status['analog-sticks']['left']
+                #joystick_R = status_R['analog-sticks']['right']
+                #print(json.dumps(joystick, indent=4))
+                time.sleep(1)
                 
             except Exception as e:
                 logging.error(f"Error reading from device: {e}")
                 time.sleep(1)  # Wait before retrying
-                self.connect()
+                #self.connect()
+                
+                
+    def _process_gamepad_input_new(self, status,status_r):
+        with self.lock:
+            
+            joystick = status['analog-sticks']['left']
+            joystick_r = status_r['analog-sticks']['right']
+        
+            # Normalize to -1.0 to 1.0
+            self.axes["LX"] = self._filter_deadzone(joystick['horizontal'] - self.left_calibration_offset[6])
+            self.axes["LY"] = self._filter_deadzone(joystick['vertical'] - self.left_calibration_offset[7])
+            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6])
+            self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
+                     
+             # Reset D-Pad buttons
+            self.buttons["DPAD_UP"] = status['buttons']['left']['up']
+            self.buttons["DPAD_DOWN"] = status['buttons']['left']['down']
+            self.buttons["DPAD_LEFT"] = status['buttons']['left']['left']
+            self.buttons["DPAD_RIGHT"] = status['buttons']['left']['right']
+            
+            self.axes["L2"] = status['buttons']['left']['zl']
+            self.axes["R2"] = status_r['buttons']['right']['zr']
+            
+            axes = self.axes.copy()
+            buttons = self.buttons.copy()
+
+
+            #print(json.dumps(axes, indent=4))
+            
+        self._update_positions(axes, buttons)
 
     def _process_gamepad_input(self, data):
         with self.lock:
@@ -255,12 +319,17 @@ class JoyConController:
             #self.send_output_report(red=0, green=0, blue=255)
             logging.info("Gyro control mode deactivated")
 
-    def _filter_deadzone(self, value, threshold=0.1):
+    def _filter_deadzone(self, value):
         """
         Apply a deadzone to the joystick input to avoid drift.
         """
-        if abs(value) < threshold:
-            return 0.0
+        value = value * 0.00005
+        
+        if abs(value) < 0.015:
+            return 0
+        
+        if abs(value) > 1: 
+            return value / value 
         return value
 
     def get_command(self):
@@ -338,9 +407,10 @@ class JoyConController:
         # Perform eligibility check
         if self._is_position_valid(temp_positions, temp_x, temp_y) and correct_inverse_kinematics:
             # Atomic update: all positions are valid, apply the changes
-            self.current_positions = temp_positions
-            self.x = temp_x
-            self.y = temp_y
+            print(temp_positions)
+          #  self.current_positions = temp_positions
+          #  self.x = temp_x
+          #  self.y = temp_y
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
@@ -486,7 +556,8 @@ class JoyConController:
         self.disconnect()
         self.thread.join()
 def main():
-  JoyConController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
+  ctl = JoyConController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
+  ctl.thread.join()
 
 if __name__ == "__main__":
     main()
