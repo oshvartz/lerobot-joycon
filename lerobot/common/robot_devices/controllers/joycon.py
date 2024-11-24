@@ -9,7 +9,6 @@ import signal
 import numpy as np
 from pyjoycon import JoyCon, get_R_id, get_L_id
 
-
 class JoyConController:
     def __init__(
         self,
@@ -38,6 +37,7 @@ class JoyConController:
         self.joycon_L = JoyCon(*get_L_id())
         self.joycon_R = JoyCon(*get_R_id())
         logging.info(f"Connected to JoyCon")
+        
         
         self.calibrate()
         
@@ -77,45 +77,7 @@ class JoyConController:
         self.VENDOR_ID = 0x054C  # Sony
         self.PRODUCT_ID = 0x09CC  # DualShock 4 Wireless Controller
 
-        # D-Pad Direction Mapping
-        self.DPAD_DIRECTIONS = {
-            0x00: "DPAD_UP",
-            0x01: "DPAD_UP_RIGHT",
-            0x02: "DPAD_RIGHT",
-            0x03: "DPAD_DOWN_RIGHT",
-            0x04: "DPAD_DOWN",
-            0x05: "DPAD_DOWN_LEFT",
-            0x06: "DPAD_LEFT",
-            0x07: "DPAD_UP_LEFT",
-            0x08: "DPAD_NEUTRAL",
-            0x0F: "DPAD_NEUTRAL",
-        }
-
-        # Face Buttons Mapping (Bits 4-7 of Byte 5)
-        self.FACE_BUTTONS = {
-            0x10: "S",
-            0x20: "X",
-            0x40: "O",
-            0x80: "T",
-        }
-
-        # Additional Buttons (Byte 6)
-        self.ADDITIONAL_BUTTONS = {
-            0x01: "L1",
-            0x02: "R1",
-            0x04: "L2",
-            0x08: "R2",
-            0x10: "SHARE",
-            0x20: "OPTIONS",
-            0x40: "L3",
-            0x80: "R3",
-        }
-
-        # Special Buttons (Byte 7)
-        self.SPECIAL_BUTTONS = {
-            0x01: "PS",
-            0x02: "TOUCHPAD",
-        }
+        
 
         
         # Gyro control mode variables
@@ -126,15 +88,8 @@ class JoyConController:
 
         # Start the thread to read inputs
         self.lock = threading.Lock()
-        self.thread = threading.Thread(target=self.read_loop, daemon=False)
-        #self.thread = threading.Thread(target=self.read_loop, daemon=True)
+        self.thread = threading.Thread(target=self.read_loop, daemon=True)
         self.thread.start()
-
-        # Set initial light bar color to default
-        self.send_output_report(
-            weak_rumble=0,
-            strong_rumble=0
-        )
 
     def connect(self):
         try:
@@ -182,7 +137,7 @@ class JoyConController:
                 #joystick = status['analog-sticks']['left']
                 #joystick_R = status_R['analog-sticks']['right']
                 #print(json.dumps(joystick, indent=4))
-                time.sleep(1)
+                #time.sleep(1)
                 
             except Exception as e:
                 logging.error(f"Error reading from device: {e}")
@@ -208,102 +163,19 @@ class JoyConController:
             self.buttons["DPAD_LEFT"] = status['buttons']['left']['left']
             self.buttons["DPAD_RIGHT"] = status['buttons']['left']['right']
             
-            self.axes["L2"] = status['buttons']['left']['zl']
-            self.axes["R2"] = status_r['buttons']['right']['zr']
+            self.axes["L2"] = float(status['buttons']['left']['zl'])* 0.05
+            self.axes["R2"] = float(status_r['buttons']['right']['zr']) * 0.05
+            
+            self.buttons["H"] = status_r['buttons']['shared']['home']
+            self.buttons["P"] = status_r['buttons']['shared']['plus']
             
             axes = self.axes.copy()
             buttons = self.buttons.copy()
 
-
-            #print(json.dumps(axes, indent=4))
             
         self._update_positions(axes, buttons)
 
-    def _process_gamepad_input(self, data):
-        with self.lock:
-            # Byte 1-4: Analog sticks
-            left_stick_x = data[1] - 128
-            left_stick_y = data[2] - 128
-            right_stick_x = data[3] - 128
-            right_stick_y = data[4] - 128
-
-            # Normalize to -1.0 to 1.0
-            self.axes["LX"] = self._filter_deadzone(left_stick_x / 128.0)
-            self.axes["LY"] = self._filter_deadzone(-left_stick_y / 128.0)
-            self.axes["RX"] = self._filter_deadzone(right_stick_x / 128.0)
-            self.axes["RY"] = self._filter_deadzone(-right_stick_y / 128.0)
-
-            # Byte 5: D-Pad and face buttons
-            buttons_byte = data[5]
-
-            # D-Pad is lower 4 bits
-            dpad_bits = buttons_byte & 0x0F
-            dpad_direction = self.DPAD_DIRECTIONS.get(dpad_bits, "DPAD_NEUTRAL")
-
-            # Reset D-Pad buttons
-            self.buttons["DPAD_UP"] = 0
-            self.buttons["DPAD_DOWN"] = 0
-            self.buttons["DPAD_LEFT"] = 0
-            self.buttons["DPAD_RIGHT"] = 0
-
-            if "UP" in dpad_direction:
-                self.buttons["DPAD_UP"] = 1
-            if "DOWN" in dpad_direction:
-                self.buttons["DPAD_DOWN"] = 1
-            if "LEFT" in dpad_direction:
-                self.buttons["DPAD_LEFT"] = 1
-            if "RIGHT" in dpad_direction:
-                self.buttons["DPAD_RIGHT"] = 1
-
-            # Face buttons are bits 4-7
-            face_buttons_bits = buttons_byte & 0xF0
-            for bitmask, name in self.FACE_BUTTONS.items():
-                self.buttons[name] = 1 if face_buttons_bits & bitmask else 0
-
-            # Byte 6: Additional buttons
-            buttons_byte2 = data[6]
-            for bitmask, name in self.ADDITIONAL_BUTTONS.items():
-                self.buttons[name] = 1 if buttons_byte2 & bitmask else 0
-
-            # Byte 7: Special buttons
-            special_buttons_byte = data[7]
-            for bitmask, name in self.SPECIAL_BUTTONS.items():
-                self.buttons[name] = 1 if special_buttons_byte & bitmask else 0
-
-            # Byte 8: L2 Analog
-            l2_analog = data[8]
-            self.axes["L2"] = l2_analog / 255.0  # 0.0 to 1.0
-
-            # Byte 9: R2 Analog
-            r2_analog = data[9]
-            self.axes["R2"] = r2_analog / 255.0  # 0.0 to 1.0
-
-            # Extract accelerometer data (bytes 19-24)
-            accel_x_raw = struct.unpack("<h", bytes(data[19:21]))[0]
-            accel_y_raw = struct.unpack("<h", bytes(data[21:23]))[0]
-            accel_z_raw = struct.unpack("<h", bytes(data[23:25]))[0]
-
-            # Compute pitch and roll from accelerometer data
-            roll_rad = -math.atan2(accel_x_raw, math.sqrt(accel_y_raw**2 + accel_z_raw**2))
-            pitch_rad = math.atan2(accel_y_raw, math.sqrt(accel_x_raw**2 + accel_z_raw**2))
-
-            # Noisy data, can add PID filter later to make it smoother
-            exp_smooth = 0.05
-            self.pitch_deg = self.pitch_deg * (1 - exp_smooth) + math.degrees(pitch_rad) * exp_smooth
-            self.roll_deg = self.roll_deg * (1 - exp_smooth) + math.degrees(roll_rad) * exp_smooth
-
-            # Detect PS button press to toggle gyro mode
-            if self.buttons["PS"] == 1 and self.previous_buttons["PS"] == 0:
-                self.toggle_gyro_mode()
-
-            # Copy current buttons to previous_buttons for next comparison
-            self.previous_buttons = self.buttons.copy()
-
-            axes = self.axes.copy()
-            buttons = self.buttons.copy()
-
-        self._update_positions(axes, buttons)
-
+    
     def toggle_gyro_mode(self):
         self.gyro_mode = not self.gyro_mode
         if self.gyro_mode:
@@ -325,8 +197,8 @@ class JoyConController:
         """
         value = value * 0.00005
         
-        if abs(value) < 0.015:
-            return 0
+        #if abs(value) < 0.015:
+        #    return 0
         
         if abs(value) > 1: 
             return value / value 
@@ -340,7 +212,7 @@ class JoyConController:
 
     def _update_positions(self, axes, buttons):
         # Compute new positions based on inputs
-        speed = 0.3
+        speed = 0.1
         # TODO: speed can be different for different directions
 
         temp_positions = self.current_positions.copy()
@@ -348,7 +220,7 @@ class JoyConController:
         # Handle macro buttons
         # Buttons have assigned states where robot can move directly
         used_macros = False
-        macro_buttons = ["X", "O", "T", "S"]  # can use more if needed
+        macro_buttons = ["H","P"]
         for button in macro_buttons:
             if buttons.get(button):
                 temp_positions = self._execute_macro(button, temp_positions)
@@ -411,7 +283,7 @@ class JoyConController:
             self.current_positions = temp_positions
             self.x = temp_x
             self.y = temp_y
-            print(self.current_positions)
+            #print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
@@ -419,25 +291,17 @@ class JoyConController:
 
     def indicate_error(self):
         # Set light bar color to red and rumble
-        self.send_output_report(weak_rumble=128, strong_rumble=128)
+        self.send_rumble(rumble=True)
 
-        # Start a timer to reset light bar color and rumble after 0.2 seconds
-        threading.Thread(target=self._reset_after_delay, args=(0.2,), daemon=True).start()
-
-    def _reset_after_delay(self, delay):
-        time.sleep(delay)
-        # Stop rumble and set light bar color back to default
-        self.send_output_report(
-            weak_rumble=0,
-            strong_rumble=0
-        )
-
-    def send_output_report(self, weak_rumble=0, strong_rumble=0):
-
+    
+    def send_rumble(self, rumble = False):
         try:
-            print("sending report")
+            if rumble:
+                joyconL = RumbleJoyCon(*get_L_id())
+                joyconL.rumble_simple()    
+        
         except Exception as e:
-            logging.error(f"Error sending output report: {e}")
+            logging.error(f"Error rumble: {e}")
 
     def _is_position_valid(self, positions, x, y):
         """
@@ -479,10 +343,10 @@ class JoyConController:
         set the motors to predefined positions.
         """
         macros = {
-            "O": [90, 170, 170, 0, 0, 10],  # initial position
-            "X": [90, 50, 130, -90, 90, 80],  # low horizontal gripper
-            "T": [90, 130, 150, 70, 90, 80],  # top down gripper
-            "S": [90, 160, 140, 20, 0, 0],  # looking forward
+            "H": [90, 170, 170, 0, 0, 10],  # initial position
+            "P": [90, 50, 130, -90, 90, 80],  # low horizontal gripper
+            #"T": [90, 130, 150, 70, 90, 80],  # top down gripper
+            #"S": [90, 160, 140, 20, 0, 0],  # looking forward
             # can add more macros for all other buttons
         }
 
@@ -556,6 +420,28 @@ class JoyConController:
         """
         self.disconnect()
         self.thread.join()
+        
+class RumbleJoyCon(JoyCon):
+    def __init__(self, *args, **kwargs):
+        JoyCon.__init__(self,*args, **kwargs)
+        
+    def _send_rumble(self,data=b'\x00\x00\x00\x00\x00\x00\x00\x00'):
+        self._RUMBLE_DATA = data
+        self._write_output_report(b'\x10', b'', b'')
+
+    def enable_vibration(self,enable=True):
+        """Sends enable or disable command for vibration. Seems to do nothing."""
+        self._write_output_report(b'\x01', b'\x48', b'\x01' if enable else b'\x00')
+        
+    def rumble_simple(self):
+        """Rumble for approximately 1.5 seconds (why?). Repeat sending to keep rumbling."""
+        self._send_rumble(b'\x98\x1e\xc6\x47\x98\x1e\xc6\x47')
+
+    def rumble_stop(self):
+        """Instantly stops the rumble"""
+        self._send_rumble()
+
+        
 def main():
   ctl = JoyConController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
   ctl.thread.join()
