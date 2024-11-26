@@ -152,20 +152,20 @@ class JoyConController:
             joystick_r = status_r['analog-sticks']['right']
         
             # Normalize to -1.0 to 1.0
-            self.axes["LX"] = self._filter_deadzone(joystick['horizontal'] - self.left_calibration_offset[6])
+            self.axes["LX"] = self._filter_deadzone(joystick['horizontal'] - self.left_calibration_offset[6]) * 0.1
             self.axes["LY"] = self._filter_deadzone(joystick['vertical'] - self.left_calibration_offset[7])
-            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6])
+            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6]) * 0.1
             self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
             #print(self.axes)
              # Reset D-Pad buttons
             up = status['buttons']['left']['up']
             down = status['buttons']['left']['down']
-            self.buttons["DPAD_UP"] = 0.007 if up == 1 else 0
-            self.buttons["DPAD_DOWN"] = 0.007 if down == 1 else 0
+            self.buttons["DPAD_UP"] = 0.001 if up == 1 else 0
+            self.buttons["DPAD_DOWN"] = 0.001 if down == 1 else 0
             left = status['buttons']['left']['left']
             right = status['buttons']['left']['right']
-            self.buttons["DPAD_LEFT"] = 0.01 if left == 1 else 0
-            self.buttons["DPAD_RIGHT"] =  0.01 if right == 1 else 0
+            self.buttons["DPAD_LEFT"] = 0.001 if left == 1 else 0
+            self.buttons["DPAD_RIGHT"] =  0.001 if right == 1 else 0
             zlpressed = status['buttons']['left']['zl']
             zrpressed = status_r['buttons']['right']['zr']
             self.axes["L2"] = 0.01 if zlpressed == 1 else 0
@@ -288,7 +288,7 @@ class JoyConController:
             self.current_positions = temp_positions
             self.x = temp_x
             self.y = temp_y
-            print(self.current_positions)
+            #print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
