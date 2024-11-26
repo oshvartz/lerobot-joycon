@@ -162,8 +162,10 @@ class JoyConController:
             down = status['buttons']['left']['down']
             self.buttons["DPAD_UP"] = 0.007 if up == 1 else 0
             self.buttons["DPAD_DOWN"] = 0.007 if down == 1 else 0
-            self.buttons["DPAD_LEFT"] = status['buttons']['left']['left']
-            self.buttons["DPAD_RIGHT"] = status['buttons']['left']['right']
+            left = status['buttons']['left']['left']
+            right = status['buttons']['left']['right']
+            self.buttons["DPAD_LEFT"] = 0.01 if left == 1 else 0
+            self.buttons["DPAD_RIGHT"] =  0.01 if right == 1 else 0
             zlpressed = status['buttons']['left']['zl']
             zrpressed = status_r['buttons']['right']['zr']
             self.axes["L2"] = 0.01 if zlpressed == 1 else 0
@@ -255,7 +257,7 @@ class JoyConController:
             # Left joystick and dpad left and right control shoulder_pan
             temp_positions["shoulder_pan"] += (
                 axes["LX"] - buttons["DPAD_LEFT"] + buttons["DPAD_RIGHT"]
-            ) * speed  # degrees per update
+            ) #* speed  # degrees per update
 
             # Handle the linear movement of the arm
             # Left joystick up/down changes x
@@ -346,8 +348,8 @@ class JoyConController:
         set the motors to predefined positions.
         """
         macros = {
-            "H": [90, 170, 170, 0, 0, 10],  # initial position
-            "P": [90, 50, 130, -90, 90, 80],  # low horizontal gripper
+            "H": [0, 170, 170, 0, 0, 10],  # initial position
+            "P": [0, 50, 130, -90, 90, 80],  # low horizontal gripper
             #"T": [90, 130, 150, 70, 90, 80],  # top down gripper
             #"S": [90, 160, 140, 20, 0, 0],  # looking forward
             # can add more macros for all other buttons
