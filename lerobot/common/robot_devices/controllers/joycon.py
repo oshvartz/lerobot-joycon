@@ -103,7 +103,7 @@ class JoyConController:
         self.running = False
     
     def calibrate(self):
-        num_samples = 100
+        num_samples = 500
         right_samples = []
         left_samples = []
         for _ in range(num_samples):
@@ -156,7 +156,7 @@ class JoyConController:
             self.axes["LY"] = self._filter_deadzone(joystick['vertical'] - self.left_calibration_offset[7])
             self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6])
             self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
-                     
+            #print(self.axes)
              # Reset D-Pad buttons
             up = status['buttons']['left']['up']
             down = status['buttons']['left']['down']
@@ -200,13 +200,13 @@ class JoyConController:
         """
         Apply a deadzone to the joystick input to avoid drift.
         """
-        value = value * 0.00005
+        value = value * 0.00001
         
         if abs(value) < 0.01:
             return 0
         
         if abs(value) > 1: 
-            return value / value 
+            return 0 
         return value
 
     def get_command(self):
@@ -217,7 +217,7 @@ class JoyConController:
 
     def _update_positions(self, axes, buttons):
         # Compute new positions based on inputs
-        speed = 0.1
+        speed = 0.3
         # TODO: speed can be different for different directions
 
         temp_positions = self.current_positions.copy()
@@ -288,7 +288,7 @@ class JoyConController:
             self.current_positions = temp_positions
             self.x = temp_x
             self.y = temp_y
-            #print(self.current_positions)
+            print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
