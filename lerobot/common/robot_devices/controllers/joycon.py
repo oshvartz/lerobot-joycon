@@ -158,13 +158,16 @@ class JoyConController:
             self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
                      
              # Reset D-Pad buttons
-            self.buttons["DPAD_UP"] = status['buttons']['left']['up']
-            self.buttons["DPAD_DOWN"] = status['buttons']['left']['down']
+            up = status['buttons']['left']['up']
+            down = status['buttons']['left']['down']
+            self.buttons["DPAD_UP"] = 0.007 if up == 1 else 0
+            self.buttons["DPAD_DOWN"] = 0.007 if down == 1 else 0
             self.buttons["DPAD_LEFT"] = status['buttons']['left']['left']
             self.buttons["DPAD_RIGHT"] = status['buttons']['left']['right']
-            
-            self.axes["L2"] = float(status['buttons']['left']['zl'])* 0.05
-            self.axes["R2"] = float(status_r['buttons']['right']['zr']) * 0.05
+            zlpressed = status['buttons']['left']['zl']
+            zrpressed = status_r['buttons']['right']['zr']
+            self.axes["L2"] = 0.01 if zlpressed == 1 else 0
+            self.axes["R2"] = 0.01  if zrpressed == 1 else 0
             
             self.buttons["H"] = status_r['buttons']['shared']['home']
             self.buttons["P"] = status_r['buttons']['shared']['plus']
@@ -197,8 +200,8 @@ class JoyConController:
         """
         value = value * 0.00005
         
-        #if abs(value) < 0.015:
-        #    return 0
+        if abs(value) < 0.01:
+            return 0
         
         if abs(value) > 1: 
             return value / value 
@@ -246,8 +249,8 @@ class JoyConController:
             temp_positions["wrist_flex"] -= axes["RY"] * speed  # degrees per update
 
             # L2 and R2 control gripper
-            temp_positions["gripper"] -= speed * axes["R2"]  # Close gripper
-            temp_positions["gripper"] += speed * axes["L2"]  # Open gripper
+            temp_positions["gripper"] -= axes["R2"]  # Close gripper
+            temp_positions["gripper"] += axes["L2"]  # Open gripper
 
             # Left joystick and dpad left and right control shoulder_pan
             temp_positions["shoulder_pan"] += (
@@ -259,7 +262,7 @@ class JoyConController:
             temp_x = self.x + axes["LY"] * speed  # mm per update
 
             # D-pad up/down change y
-            temp_y = self.y + (buttons["DPAD_UP"] - buttons["DPAD_DOWN"]) * speed
+            temp_y = self.y + (buttons["DPAD_UP"] - buttons["DPAD_DOWN"]) #* speed
 
             correct_inverse_kinematics = False
 
