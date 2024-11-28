@@ -141,8 +141,6 @@ class JoyConController:
                 
             except Exception as e:
                 logging.error(f"Error reading from device: {e}")
-                time.sleep(1)  # Wait before retrying
-                #self.connect()
                 
                 
     def _process_gamepad_input_new(self, status,status_r):
@@ -154,18 +152,18 @@ class JoyConController:
             # Normalize to -1.0 to 1.0
             self.axes["LX"] = self._filter_deadzone(joystick['horizontal'] - self.left_calibration_offset[6]) * 0.1
             self.axes["LY"] = self._filter_deadzone(joystick['vertical'] - self.left_calibration_offset[7])
-            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6]) * 0.1
+            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6]) #* 0.1
             self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
             #print(self.axes)
              # Reset D-Pad buttons
             up = status['buttons']['left']['up']
             down = status['buttons']['left']['down']
-            self.buttons["DPAD_UP"] = 0.001 if up == 1 else 0
-            self.buttons["DPAD_DOWN"] = 0.001 if down == 1 else 0
+            self.buttons["DPAD_UP"] = 0.005 if up == 1 else 0
+            self.buttons["DPAD_DOWN"] = 0.005 if down == 1 else 0
             left = status['buttons']['left']['left']
             right = status['buttons']['left']['right']
-            self.buttons["DPAD_LEFT"] = 0.001 if left == 1 else 0
-            self.buttons["DPAD_RIGHT"] =  0.001 if right == 1 else 0
+            self.buttons["DPAD_LEFT"] = 0.005 if left == 1 else 0
+            self.buttons["DPAD_RIGHT"] =  0.005 if right == 1 else 0
             zlpressed = status['buttons']['left']['zl']
             zrpressed = status_r['buttons']['right']['zr']
             self.axes["L2"] = 0.01 if zlpressed == 1 else 0
@@ -200,13 +198,13 @@ class JoyConController:
         """
         Apply a deadzone to the joystick input to avoid drift.
         """
-        value = value * 0.00001
+        value = value * 0.00002
         
-        if abs(value) < 0.01:
+        if abs(value) < 0.001:
             return 0
         
         if abs(value) > 1: 
-            return 0 
+            return 0.0007 
         return value
 
     def get_command(self):
@@ -217,7 +215,7 @@ class JoyConController:
 
     def _update_positions(self, axes, buttons):
         # Compute new positions based on inputs
-        speed = 0.3
+        speed = 0.4
         # TODO: speed can be different for different directions
 
         temp_positions = self.current_positions.copy()
@@ -314,7 +312,7 @@ class JoyConController:
         Define the allowed ranges for each motor.
         """
         allowed_ranges = {
-            "shoulder_pan": (-10, 190),
+            "shoulder_pan": (-40, 190),
             "shoulder_lift": (-5, 185),
             "elbow_flex": (-5, 185),
             "wrist_flex": (-110, 110),
