@@ -200,11 +200,11 @@ class JoyConController:
         """
         value = value * 0.00002
         
-        if abs(value) < 0.001:
+        if abs(value) < 0.01:
             return 0
         
         if abs(value) > 1: 
-            return 0.0007 
+            return 0
         return value
 
     def get_command(self):
