@@ -6,10 +6,11 @@ import threading
 import time
 import json
 import signal
+from operator import itemgetter, attrgetter
 import numpy as np
-from pyjoycon import JoyCon, get_R_id, get_L_id
+import xinput;
 
-class JoyConController:
+class XBoxController:
     def __init__(
         self,
         motor_names,
@@ -34,14 +35,20 @@ class JoyConController:
             self.current_positions["shoulder_lift"], self.current_positions["elbow_flex"]
         )
         
-        self.joycon_L = JoyCon(*get_L_id())
-        self.joycon_R = JoyCon(*get_R_id())
-        logging.info(f"Connected to JoyCon")
-        self.send_rumble(rumble=True)
-        
-        self.calibrate()
-        
+        joysticks = xinput.XInputJoystick.enumerate_devices()
+        device_numbers = list(map(attrgetter('device_number'), joysticks))
+
+        print('found %d devices: %s' % (len(joysticks), device_numbers))
+
+        if not joysticks:
+            raise Exception("No conroller found")
+
         self.running = True
+        self.joystick = joysticks[0]
+        print('using %d' % self.joystick.device_number)
+
+        battery = self.joystick.get_battery_information()
+        print(battery)
 
         # Gamepad states
         self.axes = {
@@ -72,24 +79,70 @@ class JoyConController:
             "R3": 0,
         }
         self.previous_buttons = self.buttons.copy()
-
-        # PS4 Controller constants
-        self.VENDOR_ID = 0x054C  # Sony
-        self.PRODUCT_ID = 0x09CC  # DualShock 4 Wireless Controller
-
         
-
+        self.buttons_mapping = {
+            "Up":1,
+            "Down" :2,
+            "Left": 3,
+            "Right": 4
+        }
         
-        # Gyro control mode variables
-        self.gyro_mode = False
-        self.gyro_reference = {"pitch": 0.0, "roll": 0.0}
-        self.pitch_deg = 0.0
-        self.roll_deg = 0.0
+        j = self.joystick
+        @j.event
+        def on_axis(axis, value):
+            with self.lock:
+                self.axes["LX"]  = 0
+                self.axes["LY"]  = 0
+                self.axes["RX"]  = 0
+                self.axes["RX"]  = 0
+                self.axes["R2"]  = 0
+                self.axes["L2"]  = 0
+                if(axis == 'l_thumb_x'):
+                    self.axes["LX"] = value
+                if(axis == 'l_thumb_y'):
+                    self.axes["LY"] = value
+                if(axis == 'r_thumb_x'):
+                    self.axes["RX"] = value
+                if(axis == 'r_thumb_y'):
+                    self.axes["RY"] = value
+                    
+                if(axis == 'right_trigger'):
+                    self.axes["R2"] = value
+                if(axis == 'left_trigger'):
+                    self.axes["L2"] = value
+                axes = self.axes.copy()
+                buttons = self.buttons.copy()
+                    
+            #print(self.axes)
+            #print(axis)
+            self._update_positions(axes, buttons)
+        @j.event
+        def on_button(button, pressed):
+            with self.lock:
+                up = 1 if int(button) == self.buttons_mapping['Up'] and pressed ==1 else 0
+                down = 1 if int(button) == self.buttons_mapping['Down'] and pressed ==1 else 0
+                left = 1 if int(button) == self.buttons_mapping['Left'] and pressed ==1 else 0
+                right = 1 if int(button) == self.buttons_mapping['Right'] and pressed ==1 else 0
+                self.buttons["DPAD_UP"] = 0.005 if up == 1 else 0
+                self.buttons["DPAD_DOWN"] = 0.005 if down == 1 else 0
+                self.buttons["DPAD_LEFT"] = 0.005 if left == 1 else 0
+                self.buttons["DPAD_RIGHT"] =  0.005 if right == 1 else 0
+                
+                axes = self.axes.copy()
+                buttons = self.buttons.copy()
+                
+                #print(self.buttons)
+                #print('button', button, pressed)
+            self._update_positions(axes, buttons)
 
         # Start the thread to read inputs
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self.read_loop, daemon=True)
         self.thread.start()
+        
+        self.running = True
+
+        
 
     def connect(self):
         try:
@@ -127,18 +180,8 @@ class JoyConController:
     def read_loop(self):
         while self.running:
             try:
-                status = self.joycon_L.get_status()
-                status_r = self.joycon_R.get_status()
-                self._process_gamepad_input_new(status,status_r)
-                #accel = status['accel']
-                #accel_R = status_R['accel']
-                #rot = status['gyro']
-                #rot_R = status_R['gyro']
-                #joystick = status['analog-sticks']['left']
-                #joystick_r = status_r['analog-sticks']['right']
-                #print(json.dumps(joystick_r, indent=4))
-                #time.sleep(1)
-                
+             self.joystick.dispatch_events()
+             time.sleep(.01)                
             except Exception as e:
                 logging.error(f"Error reading from device: {e}")
                 
@@ -179,21 +222,6 @@ class JoyConController:
         self._update_positions(axes, buttons)
 
     
-    def toggle_gyro_mode(self):
-        self.gyro_mode = not self.gyro_mode
-        if self.gyro_mode:
-            # Turn on gyro mode
-            #self.light_bar_color = (0, 255, 0)  # Green
-            #self.send_output_report(red=0, green=255, blue=0)
-            # Record the current pitch and roll as reference points
-            self.gyro_reference = {"pitch": self.pitch_deg, "roll": self.roll_deg}
-            logging.info("Gyro control mode activated")
-        else:
-            # Turn off gyro mode
-            #self.light_bar_color = (0, 0, 255)  # Blue
-            #self.send_output_report(red=0, green=0, blue=255)
-            logging.info("Gyro control mode deactivated")
-
     def _filter_deadzone(self, value):
         """
         Apply a deadzone to the joystick input to avoid drift.
@@ -234,16 +262,6 @@ class JoyConController:
                 used_macros = True
 
         if not used_macros:
-            # Map joystick inputs to motor positions
-            if self.gyro_mode:
-                # Use gyro data for wrist_flex and wrist_roll
-                delta_pitch = self.pitch_deg - self.gyro_reference["pitch"]
-                delta_roll = self.roll_deg - self.gyro_reference["roll"]
-                scaling_factor = 1.0  # Adjust as needed
-                temp_positions["wrist_flex"] += delta_pitch * scaling_factor
-                temp_positions["wrist_roll"] += delta_roll * scaling_factor
-                self.gyro_reference = {"pitch": self.pitch_deg, "roll": self.roll_deg}
-
             # Right joystick controls "wrist_roll" (left/right) and "wrist_flex" (up/down)
             temp_positions["wrist_roll"] += axes["RX"] * speed  # degrees per update
             temp_positions["wrist_flex"] -= axes["RY"] * speed  # degrees per update
@@ -286,7 +304,7 @@ class JoyConController:
             self.current_positions = temp_positions
             self.x = temp_x
             self.y = temp_y
-            #print(self.current_positions)
+            print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
@@ -300,7 +318,7 @@ class JoyConController:
     def send_rumble(self, rumble = False):
         try:
             if rumble:
-                joyconL = RumbleJoyCon(*get_L_id())
+                joyconL = RumbleConroller(*get_L_id())
                 joyconL.rumble_simple()    
         
         except Exception as e:
@@ -424,29 +442,10 @@ class JoyConController:
         self.disconnect()
         self.thread.join()
         
-class RumbleJoyCon(JoyCon):
-    def __init__(self, *args, **kwargs):
-        JoyCon.__init__(self,*args, **kwargs)
-        
-    def _send_rumble(self,data=b'\x00\x00\x00\x00\x00\x00\x00\x00'):
-        self._RUMBLE_DATA = data
-        self._write_output_report(b'\x10', b'', b'')
-
-    def enable_vibration(self,enable=True):
-        """Sends enable or disable command for vibration. Seems to do nothing."""
-        self._write_output_report(b'\x01', b'\x48', b'\x01' if enable else b'\x00')
-        
-    def rumble_simple(self):
-        """Rumble for approximately 1.5 seconds (why?). Repeat sending to keep rumbling."""
-        self._send_rumble(b'\x98\x1e\xc6\x47\x98\x1e\xc6\x47')
-
-    def rumble_stop(self):
-        """Instantly stops the rumble"""
-        self._send_rumble()
 
         
 def main():
-  ctl = JoyConController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
+  ctl = XBoxController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
   ctl.thread.join()
 
 if __name__ == "__main__":
