@@ -8,7 +8,8 @@ import json
 import signal
 from operator import itemgetter, attrgetter
 import numpy as np
-import xinput;
+from inputs import get_gamepad
+
 
 class XBoxController:
     def __init__(
@@ -35,20 +36,20 @@ class XBoxController:
             self.current_positions["shoulder_lift"], self.current_positions["elbow_flex"]
         )
         
-        joysticks = xinput.XInputJoystick.enumerate_devices()
-        device_numbers = list(map(attrgetter('device_number'), joysticks))
+        #joysticks = xinput.XInputJoystick.enumerate_devices()
+        #device_numbers = list(map(attrgetter('device_number'), joysticks))
 
-        print('found %d devices: %s' % (len(joysticks), device_numbers))
+        #print('found %d devices: %s' % (len(joysticks), device_numbers))
 
-        if not joysticks:
-            raise Exception("No conroller found")
+        #if not joysticks:
+        #    raise Exception("No conroller found")
 
         self.running = True
-        self.joystick = joysticks[0]
-        print('using %d' % self.joystick.device_number)
+        #self.joystick = joysticks[0]
+        #print('using %d' % self.joystick.device_number)
 
-        battery = self.joystick.get_battery_information()
-        print(battery)
+        #battery = self.joystick.get_battery_information()
+        #print(battery)
 
         # Gamepad states
         self.axes = {
@@ -87,53 +88,8 @@ class XBoxController:
             "Right": 4
         }
         
-        j = self.joystick
-        @j.event
-        def on_axis(axis, value):
-            with self.lock:
-                self.axes["LX"]  = 0
-                self.axes["LY"]  = 0
-                self.axes["RX"]  = 0
-                self.axes["RX"]  = 0
-                self.axes["R2"]  = 0
-                self.axes["L2"]  = 0
-                if(axis == 'l_thumb_x'):
-                    self.axes["LX"] = value
-                if(axis == 'l_thumb_y'):
-                    self.axes["LY"] = value
-                if(axis == 'r_thumb_x'):
-                    self.axes["RX"] = value
-                if(axis == 'r_thumb_y'):
-                    self.axes["RY"] = value
-                    
-                if(axis == 'right_trigger'):
-                    self.axes["R2"] = value
-                if(axis == 'left_trigger'):
-                    self.axes["L2"] = value
-                axes = self.axes.copy()
-                buttons = self.buttons.copy()
-                    
-            #print(self.axes)
-            #print(axis)
-            self._update_positions(axes, buttons)
-        @j.event
-        def on_button(button, pressed):
-            with self.lock:
-                up = 1 if int(button) == self.buttons_mapping['Up'] and pressed ==1 else 0
-                down = 1 if int(button) == self.buttons_mapping['Down'] and pressed ==1 else 0
-                left = 1 if int(button) == self.buttons_mapping['Left'] and pressed ==1 else 0
-                right = 1 if int(button) == self.buttons_mapping['Right'] and pressed ==1 else 0
-                self.buttons["DPAD_UP"] = 0.005 if up == 1 else 0
-                self.buttons["DPAD_DOWN"] = 0.005 if down == 1 else 0
-                self.buttons["DPAD_LEFT"] = 0.005 if left == 1 else 0
-                self.buttons["DPAD_RIGHT"] =  0.005 if right == 1 else 0
-                
-                axes = self.axes.copy()
-                buttons = self.buttons.copy()
-                
-                #print(self.buttons)
                 #print('button', button, pressed)
-            self._update_positions(axes, buttons)
+        #    self._update_positions(axes, buttons)
 
         # Start the thread to read inputs
         self.lock = threading.Lock()
@@ -142,6 +98,10 @@ class XBoxController:
         
         self.running = True
 
+    def normalize(self, value, deadzone=8000, max_value=32767):
+        if abs(value) < deadzone:
+            return 0
+        return round(value / max_value, 2)
         
 
     def connect(self):
@@ -155,35 +115,51 @@ class XBoxController:
     def disconnect(self):
         self.running = False
     
-    def calibrate(self):
-        num_samples = 500
-        right_samples = []
-        left_samples = []
-        for _ in range(num_samples):
-            status = self.joycon_L.get_status()
-            status_R = self.joycon_R.get_status()
-            accel = status['accel']
-            accel_R = status_R['accel']
-            rot = status['gyro']
-            rot_R = status_R['gyro']
-            joystick = status['analog-sticks']['left']
-            joystick_R = status_R['analog-sticks']['right']
-
-            left_samples.append([accel['x'], accel['y'], accel['z'], rot['x'], rot['y'], rot['z'], joystick['horizontal'], joystick['vertical']])
-            right_samples.append([accel_R['x'], accel_R['y'], accel_R['z'], rot_R['x'], rot_R['y'], rot_R['z'], joystick_R['horizontal'], joystick_R['vertical']])
-            #time.sleep(0.01)
-        
-        self.right_calibration_offset = np.mean(right_samples, axis=0)
-        self.left_calibration_offset = np.mean(left_samples, axis=0)
-
+    
        
     def read_loop(self):
         while self.running:
-            try:
-             self.joystick.dispatch_events()
-             time.sleep(.01)                
-            except Exception as e:
-                logging.error(f"Error reading from device: {e}")
+            
+                try:
+                
+                    events = get_gamepad()
+                    #with self.lock:
+                    for event in events:
+                        if event.code in ['ABS_RX','ABS_RY','ABS_Y','ABS_X']:
+                            # Axis event
+                            normalized = self.normalize(event.state)
+                            if event.code == 'ABS_X':
+                                self.axes["LX"] = normalized
+                            if event.code == 'ABS_Y':
+                                self.axes["LY"] = normalized
+                            if event.code == 'ABS_RX':
+                                self.axes["RX"] = normalized
+                            if event.code == 'ABS_RY':
+                                self.axes["RY"] = normalized
+                        elif event.code in ['ABS_Z','ABS_RZ']:
+                            # Axis event
+                            normalized = self.normalize(event.state,0,255)
+                            if event.code == 'ABS_RZ':
+                                self.axes["R2"] = normalized
+                            if event.code == 'ABS_Z':
+                                self.axes["L2"] = normalized
+                        elif event.code.startswith('BTN'):
+                            # Button event
+                            print(f"!{event.code}: {event.state}")
+                        elif not event.code.startswith('SYN'):
+                            up = 1 if event.code == 'ABS_HAT0Y' and event.state == -1 else 0
+                            down = 1 if event.code == 'ABS_HAT0Y' and event.state == 1 else 0
+                            left = 1 if event.code == 'ABS_HAT0X' and event.state == -1 else 0
+                            right = 1 if event.code == 'ABS_HAT0X' and event.state == 1 else 0
+                            self.buttons["DPAD_UP"] = 0.005 if up == 1 else 0
+                            self.buttons["DPAD_DOWN"] = 0.005 if down == 1 else 0
+                            self.buttons["DPAD_LEFT"] = 0.005 if left == 1 else 0
+                            self.buttons["DPAD_RIGHT"] =  0.005 if right == 1 else 0
+                        axes = self.axes.copy()
+                        buttons = self.buttons.copy()
+                    self._update_positions(axes, buttons)
+                except Exception as e:
+                    logging.error(f"Error reading from device: {e}")
                 
                 
     def _process_gamepad_input_new(self, status,status_r):
