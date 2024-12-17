@@ -20,7 +20,7 @@ max_relative_target: null
 
 # Add the controller
 controller:
-  _target_: lerobot.common.robot_devices.controllers.joycon.JoyConController
+  _target_: lerobot.common.robot_devices.controllers.xbox.XBoxController
   motor_names:
     - shoulder_pan
     - shoulder_lift
