@@ -153,9 +153,13 @@ class XBoxController:
                                     self.axes["L2"] = normalized
                             elif event.code.startswith('BTN'):
                                 # Button event
-                                print(f"!{event.code}: {event.state}")
+                                if event.code == 'BTN_SELECT':
+                                    if event.state == 1:
+                                        self.buttons["H"] = 1
+                                    else:
+                                        self.buttons["H"] = 0
                             elif not event.code.startswith('SYN'):
-                                print(event.state)
+                                
                                 if event.code == 'ABS_HAT0Y':
                                     if event.state == -1: 
                                         self.buttons["DPAD_UP"] = 5
