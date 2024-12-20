@@ -31,6 +31,7 @@ controller:
   initial_position: [0, 170, 170, 0, 0, 10]  # Configurable initial positions
   l1: 117.0  # Length of first lever in mm
   l2: 136.0  # Length of second lever in mm
+  print_pos: False
 
 
 follower_arms:

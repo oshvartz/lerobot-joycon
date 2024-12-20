@@ -6,9 +6,12 @@ import threading
 import time
 import json
 import signal
+import sys
 from operator import itemgetter, attrgetter
 import numpy as np
 from inputs import get_gamepad
+from inputs import devices
+
 #import inputs
 
 
@@ -19,10 +22,12 @@ class XBoxController:
         initial_position=None,
         l1=117.0,  # Length of first lever in mm
         l2=136.0,  # Length of second lever in mm
+        print_pos = False,
         *args,
         **kwargs,
     ):
     
+        self.print_pos = print_pos
         self.motor_names = motor_names
         self.initial_position = initial_position if initial_position else [90, 170, 170, 0, 0, 10]
         self.current_positions = dict(zip(self.motor_names, self.initial_position, strict=False))
@@ -36,6 +41,11 @@ class XBoxController:
         self.x, self.y = self._compute_position(
             self.current_positions["shoulder_lift"], self.current_positions["elbow_flex"]
         )
+        
+        self.gamepad = devices.gamepads[0]
+        print(self.gamepad)
+        
+
         
         #joysticks = xinput.XInputJoystick.enumerate_devices()
         #device_numbers = list(map(attrgetter('device_number'), joysticks))
@@ -125,11 +135,7 @@ class XBoxController:
             
                 try:
                 
-                    events = get_gamepad(False)
-                    #print(events)
-                    #if events is None or not events:
-                    #    time.sleep(0.001)
-                    #    continue
+                    events = get_gamepad()#(True)
                     
                     for event in events:
                         with self.lock:
@@ -184,53 +190,12 @@ class XBoxController:
                             axes = self.axes.copy()
                             buttons = self.buttons.copy()
                         self._update_positions(axes, buttons)
-                        #time.sleep(0.1)
-                    dt = time.time() - prev_time
-                    if dt > 1:
-                     #   print(self.axes["LX"])
-                        prev_time = time.time()  
+                        #time.sleep(0.01)
                 except Exception as e:
                     pass
                     # logging.error(f"Error reading from device: {e}")
                 
                 
-    def _process_gamepad_input_new(self, status,status_r):
-        with self.lock:
-            
-            joystick = status['analog-sticks']['left']
-            joystick_r = status_r['analog-sticks']['right']
-        
-            # Normalize to -1.0 to 1.0
-            self.axes["LX"] = self._filter_deadzone(joystick['horizontal'] - self.left_calibration_offset[6]) * 0.1
-            self.axes["LY"] = self._filter_deadzone(joystick['vertical'] - self.left_calibration_offset[7])
-            self.axes["RX"] = self._filter_deadzone(joystick_r['horizontal'] - self.right_calibration_offset[6]) #* 0.1
-            self.axes["RY"] = self._filter_deadzone(joystick_r['vertical'] - self.right_calibration_offset[7])
-            #print(self.axes["LX"])
-             # Reset D-Pad buttons
-            up = status['buttons']['left']['up']
-            down = status['buttons']['left']['down']
-            self.buttons["DPAD_UP"] = 0.005 if up == 1 else 0
-            self.buttons["DPAD_DOWN"] = 0.005 if down == 1 else 0
-            left = status['buttons']['left']['left']
-            right = status['buttons']['left']['right']
-            self.buttons["DPAD_LEFT"] = 0.005 if left == 1 else 0
-            self.buttons["DPAD_RIGHT"] =  0.005 if right == 1 else 0
-            zlpressed = status['buttons']['left']['zl']
-            zrpressed = status_r['buttons']['right']['zr']
-            self.axes["L2"] = 0.01 if zlpressed == 1 else 0
-            self.axes["R2"] = 0.01  if zrpressed == 1 else 0
-            
-            self.buttons["H"] = status_r['buttons']['shared']['home']
-            self.buttons["P"] = status_r['buttons']['shared']['plus']
-            
-            axes = self.axes.copy()
-            buttons = self.buttons.copy()
-            time.sleep(.01)
-
-
-            
-        self._update_positions(axes, buttons)
-
     
     def _filter_deadzone(self, value):
         """
@@ -314,23 +279,21 @@ class XBoxController:
             self.current_positions = temp_positions
             self.x = temp_x
             self.y = temp_y
-            #print(self.current_positions)
+            self.send_rumble(rumble=False)
+            if self.print_pos:
+              print(self.current_positions)
         else:
             # Invalid positions detected, do not update
             logging.warning("Invalid motor positions detected. Changes have been discarded.")
-            self.indicate_error()
-
-    def indicate_error(self):
-        # Set light bar color to red and rumble
-        self.send_rumble(rumble=True)
+            self.send_rumble(rumble=True)
 
     
     def send_rumble(self, rumble = False):
         try:
             if rumble:
-                joyconL = RumbleConroller(*get_L_id())
-                joyconL.rumble_simple()    
-        
+                 self.gamepad.set_vibration(1, 1)
+            else:
+                self.gamepad.set_vibration(0, 0)
         except Exception as e:
             logging.error(f"Error rumble: {e}")
 
@@ -344,7 +307,7 @@ class XBoxController:
             "shoulder_lift": (-5, 185),
             "elbow_flex": (-5, 185),
             "wrist_flex": (-110, 110),
-            "wrist_roll": (-110, 110),
+            "wrist_roll": (-130, 130),
             "gripper": (0, 100),
             "x": (15, 250),
             "y": (-110, 250),
@@ -449,14 +412,22 @@ class XBoxController:
         """
         Clean up resources.
         """
+        self.read_loop = False
         self.disconnect()
         self.thread.join()
         
 
+def signal_handler(sig, frame):
+    print('You pressed Ctrl+C!')
+    sys.exit(0)
         
 def main():
-  ctl = XBoxController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10])
-  ctl.thread.join()
+  ctl = XBoxController(['shoulder_pan','shoulder_lift','elbow_flex','wrist_flex','wrist_roll','gripper'],[90, 170, 170, 0, 0, 10],print_pos=True)
+  signal.signal(signal.SIGBREAK, signal_handler)
+  print('Press Ctrl+C')
+  while True:
+    time.sleep(1)
 
 if __name__ == "__main__":
     main()
+    
