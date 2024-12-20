@@ -167,26 +167,29 @@ class XBoxController:
                             elif not event.code.startswith('SYN'):
                                 
                                 if event.code == 'ABS_HAT0Y':
+                                    print(event.state)
                                     if event.state == -1: 
-                                        self.buttons["DPAD_UP"] = 5
+                                        self.up_pressed = True
+                                        self.buttons["DPAD_UP"] = 7
                                         self.buttons["DPAD_DOWN"] = 0        
                                     elif event.state == 1: 
+                                        self.up_pressed = False
                                         self.buttons["DPAD_UP"] =  0
-                                        self.buttons["DPAD_DOWN"] = 5
+                                        self.buttons["DPAD_DOWN"] = 7
                                     else:
+                                        self.up_pressed = False
                                         self.buttons["DPAD_UP"] =  0
                                         self.buttons["DPAD_DOWN"] = 0
                                 if event.code == 'ABS_HAT0X':
                                     if event.state == -1: 
-                                        self.buttons["DPAD_LEFT"] = 5
+                                        self.buttons["DPAD_LEFT"] = 7
                                         self.buttons["DPAD_RIGHT"] = 0        
                                     elif event.state == 1: 
                                         self.buttons["DPAD_LEFT"] =  0
-                                        self.buttons["DPAD_RIGHT"] = 5
+                                        self.buttons["DPAD_RIGHT"] = 7
                                     else:
                                         self.buttons["DPAD_LEFT"] =  0
                                         self.buttons["DPAD_RIGHT"] = 0
-                                
                             axes = self.axes.copy()
                             buttons = self.buttons.copy()
                         self._update_positions(axes, buttons)
