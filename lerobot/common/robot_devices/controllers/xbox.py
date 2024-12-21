@@ -1,14 +1,10 @@
 # pip install joycon-python
 import logging
 import math
-import struct
 import threading
 import time
-import json
 import signal
 import sys
-from operator import itemgetter, attrgetter
-import numpy as np
 from inputs import get_gamepad
 from inputs import devices
 
@@ -43,25 +39,12 @@ class XBoxController:
         )
         
         self.gamepad = devices.gamepads[0]
-        print(self.gamepad)
+        logging.info(self.gamepad)
         
+        if not self.gamepad:
+            raise Exception("No conroller found")
 
-        
-        #joysticks = xinput.XInputJoystick.enumerate_devices()
-        #device_numbers = list(map(attrgetter('device_number'), joysticks))
-
-        #print('found %d devices: %s' % (len(joysticks), device_numbers))
-
-        #if not joysticks:
-        #    raise Exception("No conroller found")
-
-        #self.gamepad = inputs.devices.gamepads[0]
         self.running = True
-        #self.joystick = joysticks[0]
-        #print('using %d' % self.joystick.device_number)
-
-        #battery = self.joystick.get_battery_information()
-        #print(battery)
 
         # Gamepad states
         self.axes = {
@@ -69,12 +52,12 @@ class XBoxController:
             "RY": 0.0,
             "LX": 0.0,
             "LY": 0.0,
-            "L2": 0.0,
-            "R2": 0.0,
+            "LT": 0.0,
+            "RT": 0.0,
         }
         self.buttons = {
-            "L2": 0,
-            "R2": 0,
+            "LT": 0,
+            "RT": 0,
             "DPAD_LEFT": 0,
             "DPAD_RIGHT": 0,
             "DPAD_UP": 0,
@@ -100,9 +83,6 @@ class XBoxController:
             "Right": 4
         }
         
-                #print('button', button, pressed)
-        #    self._update_positions(axes, buttons)
-
         # Start the thread to read inputs
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self.read_loop, daemon=True)
@@ -117,8 +97,7 @@ class XBoxController:
         
 
     def connect(self):
-        try:
-          
+        try:          
             self.running = True
         except OSError as e:
             logging.error(f"Unable to open device: {e}")
@@ -127,92 +106,71 @@ class XBoxController:
     def disconnect(self):
         self.running = False
     
-    
-       
-    def read_loop(self):
-        prev_time = time.time()
-        while self.running:
-            
-                try:
-                
-                    events = get_gamepad()#(True)
-                    
-                    for event in events:
-                        with self.lock:
-                            if event.code in ['ABS_RX','ABS_RY','ABS_Y','ABS_X']:
-                                # Axis event
-                                normalized = self.normalize(event.state)
-                                if event.code == 'ABS_X':
-                                    self.axes["LX"] = normalized
-                                if event.code == 'ABS_Y':
-                                    self.axes["LY"] = normalized
-                                if event.code == 'ABS_RX':
-                                    self.axes["RX"] = normalized
-                                if event.code == 'ABS_RY':
-                                    self.axes["RY"] = normalized
-                            elif event.code in ['ABS_Z','ABS_RZ']:
-                                # Axis event
-                                normalized = self.normalize(event.state,0,255)
-                                if event.code == 'ABS_RZ':
-                                    self.axes["R2"] = normalized
-                                if event.code == 'ABS_Z':
-                                    self.axes["L2"] = normalized
-                            elif event.code.startswith('BTN'):
-                                # Button event
-                                if event.code == 'BTN_SELECT':
-                                    if event.state == 1:
-                                        self.buttons["H"] = 1
-                                    else:
-                                        self.buttons["H"] = 0
-                            elif not event.code.startswith('SYN'):
-                                
-                                if event.code == 'ABS_HAT0Y':
-                                    print(event.state)
-                                    if event.state == -1: 
-                                        self.up_pressed = True
-                                        self.buttons["DPAD_UP"] = 7
-                                        self.buttons["DPAD_DOWN"] = 0        
-                                    elif event.state == 1: 
-                                        self.up_pressed = False
-                                        self.buttons["DPAD_UP"] =  0
-                                        self.buttons["DPAD_DOWN"] = 7
-                                    else:
-                                        self.up_pressed = False
-                                        self.buttons["DPAD_UP"] =  0
-                                        self.buttons["DPAD_DOWN"] = 0
-                                if event.code == 'ABS_HAT0X':
-                                    if event.state == -1: 
-                                        self.buttons["DPAD_LEFT"] = 7
-                                        self.buttons["DPAD_RIGHT"] = 0        
-                                    elif event.state == 1: 
-                                        self.buttons["DPAD_LEFT"] =  0
-                                        self.buttons["DPAD_RIGHT"] = 7
-                                    else:
-                                        self.buttons["DPAD_LEFT"] =  0
-                                        self.buttons["DPAD_RIGHT"] = 0
-                            axes = self.axes.copy()
-                            buttons = self.buttons.copy()
-                        self._update_positions(axes, buttons)
-                        #time.sleep(0.01)
-                except Exception as e:
-                    pass
-                    # logging.error(f"Error reading from device: {e}")
-                
-                
-    
-    def _filter_deadzone(self, value):
-        """
-        Apply a deadzone to the joystick input to avoid drift.
-        """
-        value = value * 0.00002
-        
-        if abs(value) < 0.01:
-            return 0
-        
-        if abs(value) > 1: 
-            return 0
-        return value
 
+    def read_loop(self):
+        while self.running:
+                try:
+                    events = get_gamepad()
+                    self.process_gamepadevents(events)
+                        
+                except Exception as e:
+                     logging.error(f"Error reading from device: {e}")
+
+    def process_gamepadevents(self, events):
+        for event in events:
+            with self.lock:
+                if event.code in ['ABS_RX','ABS_RY','ABS_Y','ABS_X']:
+                    normalized = self.normalize(event.state)
+                    if event.code == 'ABS_X':
+                        self.axes["LX"] = normalized
+                    if event.code == 'ABS_Y':
+                        self.axes["LY"] = normalized
+                    if event.code == 'ABS_RX':
+                        self.axes["RX"] = normalized
+                    if event.code == 'ABS_RY':
+                        self.axes["RY"] = normalized
+                elif event.code in ['ABS_Z','ABS_RZ']:
+                                # Axis event
+                    normalized = self.normalize(event.state,0,255)
+                    if event.code == 'ABS_RZ':
+                        self.axes["RT"] = normalized
+                    if event.code == 'ABS_Z':
+                        self.axes["LT"] = normalized
+                elif event.code.startswith('BTN'):
+                                # Button event
+                    if event.code == 'BTN_SELECT':
+                        if event.state == 1:
+                            self.buttons["SEL"] = 1
+                        else:
+                            self.buttons["SEL"] = 0
+                elif not event.code.startswith('SYN'):
+                    if event.code == 'ABS_HAT0Y':
+                        print(event.state)
+                        if event.state == -1: 
+                            self.up_pressed = True
+                            self.buttons["DPAD_UP"] = 7
+                            self.buttons["DPAD_DOWN"] = 0        
+                        elif event.state == 1: 
+                            self.up_pressed = False
+                            self.buttons["DPAD_UP"] =  0
+                            self.buttons["DPAD_DOWN"] = 7
+                        else:
+                            self.up_pressed = False
+                            self.buttons["DPAD_UP"] =  0
+                            self.buttons["DPAD_DOWN"] = 0
+                    if event.code == 'ABS_HAT0X':
+                        if event.state == -1: 
+                            self.buttons["DPAD_LEFT"] = 7
+                            self.buttons["DPAD_RIGHT"] = 0        
+                        elif event.state == 1: 
+                            self.buttons["DPAD_LEFT"] =  0
+                            self.buttons["DPAD_RIGHT"] = 7
+                        else:
+                            self.buttons["DPAD_LEFT"] =  0
+                            self.buttons["DPAD_RIGHT"] = 0
+                axes = self.axes.copy()
+                buttons = self.buttons.copy()
+            self._update_positions(axes, buttons)
     def get_command(self):
         """
         Return the current motor positions after reading and processing inputs.
@@ -229,7 +187,7 @@ class XBoxController:
         # Handle macro buttons
         # Buttons have assigned states where robot can move directly
         used_macros = False
-        macro_buttons = ["H","P"]
+        macro_buttons = ["SEL"]
         for button in macro_buttons:
             if buttons.get(button):
                 temp_positions = self._execute_macro(button, temp_positions)
@@ -245,8 +203,8 @@ class XBoxController:
             temp_positions["wrist_flex"] -= axes["RY"] * speed  # degrees per update
 
             # L2 and R2 control gripper
-            temp_positions["gripper"] -= axes["R2"]  # Close gripper
-            temp_positions["gripper"] += axes["L2"]  # Open gripper
+            temp_positions["gripper"] -= axes["RT"]  # Close gripper
+            temp_positions["gripper"] += axes["LT"]  # Open gripper
 
             # Left joystick and dpad left and right control shoulder_pan
             temp_positions["shoulder_pan"] += (
@@ -306,7 +264,7 @@ class XBoxController:
         Define the allowed ranges for each motor.
         """
         allowed_ranges = {
-            "shoulder_pan": (-40, 190),
+            "shoulder_pan": (-70, 190),
             "shoulder_lift": (-5, 185),
             "elbow_flex": (-5, 185),
             "wrist_flex": (-110, 110),
@@ -340,10 +298,7 @@ class XBoxController:
         set the motors to predefined positions.
         """
         macros = {
-            "H": [0, 170, 170, 0, 0, 10],  # initial position
-            "P": [0, 50, 130, -90, 90, 80],  # low horizontal gripper
-            #"T": [90, 130, 150, 70, 90, 80],  # top down gripper
-            #"S": [90, 160, 140, 20, 0, 0],  # looking forward
+            "SEL": [0, 170, 170, 0, 0, 10],  # initial position
             # can add more macros for all other buttons
         }
 
